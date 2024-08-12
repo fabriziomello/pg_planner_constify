@@ -130,8 +130,9 @@ planner_constify(Query *parse, const char *query_string, int cursor_opts,
 
 	if (guc_function)
 	{
-		guc_function_oid =
-			DatumGetObjectId(DirectFunctionCall1(regprocedurein, CStringGetDatum(guc_function)));
+		if (!OidIsValid(guc_function_oid))
+			guc_function_oid = DatumGetObjectId(
+				DirectFunctionCall1(regprocedurein, CStringGetDatum(guc_function)));
 
 		if (OidIsValid(guc_function_oid))
 			planner_constify_walker((Node *) parse, NULL);
@@ -156,18 +157,12 @@ on_backend_exit(int code, Datum arg)
 	planner_hook = prev_planner_hook;
 }
 
-// static void
-// guc_function_assign_hook(const char *newval, void *extra)
-// {
-// 	if (newval == NULL || guc_function == NULL || newval[0] == '\0')
-// 	{
-// 		guc_function_oid = InvalidOid;
-// 		return;
-// 	}
-
-// 	if (strcmp(guc_function, newval) != 0)
-// 		guc_function_oid = InvalidOid;
-// }
+static void
+guc_function_assign_hook(const char *newval, void *extra)
+{
+	if (newval == NULL || guc_function == NULL || strcmp(guc_function, newval) != 0)
+		guc_function_oid = InvalidOid;
+}
 
 void
 _PG_init(void)
@@ -183,7 +178,7 @@ _PG_init(void)
 							   /* context= */ PGC_USERSET,
 							   /* flags= */ 0,
 							   /* check_hook= */ NULL,
-							   /* assign_hook= */ NULL /*guc_function_assign_hook*/ ,
+							   /* assign_hook= */ guc_function_assign_hook,
 							   /* show_hook= */ NULL);
 
 	/* Register a function to be called when the backend exits */
