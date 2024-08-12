@@ -34,7 +34,7 @@ constify_function_call(Node *node)
 	{
 		case T_OpExpr:
 		{
-			OpExpr *op = copyObject(castNode(OpExpr, node));
+			OpExpr *op = castNode(OpExpr, node);
 
 			if (IsA(lsecond(op->args), FuncExpr))
 			{
