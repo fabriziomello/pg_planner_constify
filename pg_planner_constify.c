@@ -19,10 +19,19 @@ static char *guc_function = NULL;
 static Oid guc_function_oid = InvalidOid;
 
 static bool
-is_valid_function(FuncExpr *funcExpr)
+is_valid_function(Node *node)
 {
-	return (OidIsValid(guc_function_oid) && funcExpr->funcid == guc_function_oid &&
-			!funcExpr->funcretset);
+	if (!OidIsValid(guc_function_oid))
+		return false;
+
+	if (IsA(node, FuncExpr))
+		return (castNode(FuncExpr, node)->funcid == guc_function_oid &&
+				!castNode(FuncExpr, node)->funcretset);
+	else if (IsA(node, OpExpr))
+		return (castNode(OpExpr, node)->opfuncid == guc_function_oid &&
+				!castNode(OpExpr, node)->opretset);
+
+	return false;
 }
 
 static Node *
@@ -35,12 +44,13 @@ constify_function_call(Node *node)
 		case T_OpExpr:
 		{
 			OpExpr *op = castNode(OpExpr, node);
+			Node *second = lsecond(op->args);
 
-			if (IsA(lsecond(op->args), FuncExpr))
+			if (IsA(second, FuncExpr))
 			{
 				FuncExpr *funcExpr = castNode(FuncExpr, lsecond(op->args));
 
-				if (is_valid_function(funcExpr))
+				if (is_valid_function((Node *) funcExpr))
 				{
 					Datum result;
 					Const *const_value;
@@ -53,6 +63,38 @@ constify_function_call(Node *node)
 					const_value = makeConst(/* consttype */ funcExpr->funcresulttype,
 											/* consttypmod */ -1,
 											/* constcollid */ funcExpr->funccollid,
+											/* constlen */ tce->typlen,
+											/* constvalue */ result,
+											/* constisnull */ false,
+											/* constbyval */ false);
+
+					op->args = list_make2(linitial(op->args), (Node *) const_value);
+					return (Node *) op;
+				}
+			}
+			else if (IsA(second, OpExpr))
+			{
+				OpExpr *opExpr = castNode(OpExpr, second);
+
+				// ListCell *lc;
+				// foreach (lc, opExpr->args)
+				// {
+				// 	if (IsA(lfirst(lc), FuncExpr))
+				// 		return constify_function_call((Node *) lfirst(lc));
+				// }
+				if (is_valid_function((Node *) opExpr))
+				{
+					Datum result;
+					Const *const_value;
+					TypeCacheEntry *tce = lookup_type_cache(opExpr->opresulttype, 0);
+
+					elog(DEBUG1, "constifying function %s", guc_function);
+
+					result = OidFunctionCall0(opExpr->opfuncid);
+
+					const_value = makeConst(/* consttype */ opExpr->opresulttype,
+											/* consttypmod */ -1,
+											/* constcollid */ opExpr->opcollid,
 											/* constlen */ tce->typlen,
 											/* constvalue */ result,
 											/* constisnull */ false,
