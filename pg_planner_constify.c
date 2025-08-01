@@ -56,7 +56,7 @@ constify_function_call(Node *node)
 											/* constlen */ tce->typlen,
 											/* constvalue */ result,
 											/* constisnull */ false,
-											/* constbyval */ false);
+											/* constbyval */ true);
 
 					op->args = list_make2(linitial(op->args), (Node *) const_value);
 					return (Node *) op;
